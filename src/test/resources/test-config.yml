@@ -1,0 +1,3 @@
+server:
+  type: default
+  maxThreads: 1024
