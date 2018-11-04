@@ -1,6 +1,4 @@
-# Main
-
-Caching filter for dropwizard.
+# Caching filter for dropwizard.
 
 Licence: Apache 2.0
 
