@@ -2,6 +2,8 @@
 
 Caching filter for dropwizard.
 
+Licence: Apache 2.0
+
 How to use:
 
 In main application: Register cache
