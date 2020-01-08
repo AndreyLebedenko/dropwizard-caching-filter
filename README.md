@@ -30,3 +30,6 @@ In resource: Instruct caching filter to cache operations per method
 
 Parameter -- TTL of the cache entry in milliseconds.
 
+# Principal diagram
+
+![Principal diagram](https://github.com/AndreyLebedenko/dropwizard-caching-filter/raw/master/Dropwizard-Caching-Filter.jpg)
