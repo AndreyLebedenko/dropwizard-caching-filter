@@ -1,4 +1,6 @@
+# to change language of repo from Javascript to Python
+*.java linguist-language=Java
 *.java linguist-detectable=true
-*.js linguist-detectable=false
+*.php linguist-detectable=false
 *.html linguist-detectable=false
 *.xml linguist-detectable=false
