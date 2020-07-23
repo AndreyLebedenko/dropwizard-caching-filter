@@ -20,38 +20,36 @@ import java.util.function.Function;
 
 import com.google.common.cache.Cache;
 
-/**
- *
- * @author Andrey Lebedenko (andrey.lebedenko@gmail.com)
- */
+/** @author Andrey Lebedenko (andrey.lebedenko@gmail.com) */
 public class CachingFilterFeature implements Feature {
 
   private static final Logger logger = LoggerFactory.getLogger(CachingFilterFeature.class);
   private final List<String> headersToIncludeInKey;
   private final Cache<String, StatefulCacheEntry<HttpResponse>> cache;
 
-  public CachingFilterFeature(List<String> headersToIncludeInKey, Cache<String, StatefulCacheEntry<HttpResponse>> cache) {
+  public CachingFilterFeature(
+      List<String> headersToIncludeInKey, Cache<String, StatefulCacheEntry<HttpResponse>> cache) {
     this.headersToIncludeInKey = headersToIncludeInKey;
     this.cache = cache;
   }
 
   @Override
   public boolean configure(final FeatureContext context) {
-    final Function<ContainerRequestContext, String> keyGen = x -> {
-      String res = "";
-      for (final String h : headersToIncludeInKey) {
-        res = res + h + ":" + x.getHeaderString(h);
-      }
-      final String key = x.getMethod() + ":" + x.getUriInfo().getPath() + ":" + res;
-      logger.debug("Key produced: {}", key);
-      return key;
-    };
-
+    final Function<ContainerRequestContext, String> keyGen = x -> computeKey(x);
     context
         .register(new CachingRequestFilter(keyGen, cache))
         .register(new CachingResponseFilter(cache));
     return true;
   }
 
+  // This will be called on every request to produce a key for the cache.
+  private String computeKey(ContainerRequestContext context) {
+    String res = "";
+    for (final String h : headersToIncludeInKey) {
+      res = res + h + ":" + context.getHeaderString(h);
+    }
+    final String key = context.getMethod() + ":" + context.getUriInfo().getPath() + ":" + res;
+    logger.debug("Key produced: {}", key);
+    return key;
+  }
 }
-
