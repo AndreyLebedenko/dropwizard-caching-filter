@@ -25,16 +25,12 @@ import java.util.logging.Logger;
 
 import com.google.common.cache.Cache;
 
-/**
- *
- * @author Andrey Lebedenko (andrey.lebedenko@gmail.com)
- */
+/** @author Andrey Lebedenko (andrey.lebedenko@gmail.com) */
 public class CachingRequestFilter implements ContainerRequestFilter {
   private final Function<ContainerRequestContext, String> keyFactory;
   private final Cache<String, StatefulCacheEntry<HttpResponse>> cache;
 
-  @Context
-  private ResourceInfo resourceInfo;
+  @Context private ResourceInfo resourceInfo;
 
   public CachingRequestFilter(
       final Function<ContainerRequestContext, String> keyFactory,
@@ -44,38 +40,43 @@ public class CachingRequestFilter implements ContainerRequestFilter {
   }
 
   @Override
-  public void filter(final ContainerRequestContext requestContext) throws IOException {
+  public void filter(final ContainerRequestContext requestContext) {
     final Method resourceMethod = resourceInfo.getResourceMethod();
-    final Optional<ResponseCachedByFilter> annotation = Optional.ofNullable(resourceMethod.getDeclaredAnnotation(ResponseCachedByFilter.class));
-    annotation.ifPresent(a -> {
-      try {
-        final String key = keyFactory.apply(requestContext);
-        requestContext.setProperty(Options.KEY, key);
-        final StatefulCacheEntry<HttpResponse> element = cache.get(key, StatefulCacheEntry::new);
-        synchronized (element) {
-          if (element.isNew()) {
-            requestContext.setProperty(Options.TTL, a.value());
-            requestContext.setProperty(Role.OPTION_NAME, Role.Producer);
-            requestContext.setProperty(Options.CACHE_ENTRY, element);
-            return;
-          } else if (element.isPending()) {
-            requestContext.setProperty(Role.OPTION_NAME, Role.Consumer);
-            element.wait(a.value());
-            if (element.isReady()) // ready after concurrent request
-            {
-              requestContext.abortWith(element.getData().asResponse());
-            }
-          } else // Ready
-          {
-            requestContext.setProperty(Role.OPTION_NAME, Role.Consumer);
-            requestContext.abortWith(element.getData().asResponse());
-          }
-        }
-      } catch (ExecutionException | InterruptedException ex) {
-        Logger.getLogger(CachingRequestFilter.class.getName()).log(Level.SEVERE, null, ex);
-      }
-    });
+    final Optional<ResponseCachedByFilter> annotation =
+        Optional.ofNullable(resourceMethod.getDeclaredAnnotation(ResponseCachedByFilter.class));
+    annotation.ifPresent(a -> processRequestViaCache(requestContext, a));
   }
 
+  private void processRequestViaCache(
+      ContainerRequestContext requestContextContainer, ResponseCachedByFilter cachedResponse) {
+    try {
+      final String key = keyFactory.apply(requestContextContainer);
+      requestContextContainer.setProperty(Options.KEY, key);
+      // In worst case scenario if cache implementation does not guarantee the per-key atomicity of the `get` function.
+      // such a cache hit will result in double processing with race condition on update, which is unfortunate, but
+      // not catastrophic.
+      final StatefulCacheEntry<HttpResponse> element = cache.get(key, StatefulCacheEntry::new);
+      synchronized (element) {
+        if (element.isNew()) {
+          requestContextContainer.setProperty(Options.TTL, cachedResponse.value());
+          requestContextContainer.setProperty(Role.OPTION_NAME, Role.Producer);
+          requestContextContainer.setProperty(Options.CACHE_ENTRY, element);
+          return;
+        } else if (element.isPending()) {
+          requestContextContainer.setProperty(Role.OPTION_NAME, Role.Consumer);
+          element.wait(cachedResponse.value());
+          if (element.isReady()) // ready after concurrent request
+          {
+            requestContextContainer.abortWith(element.getData().asResponse());
+          }
+        } else // Ready
+        {
+          requestContextContainer.setProperty(Role.OPTION_NAME, Role.Consumer);
+          requestContextContainer.abortWith(element.getData().asResponse());
+        }
+      }
+    } catch (ExecutionException | InterruptedException ex) {
+      Logger.getLogger(CachingRequestFilter.class.getName()).log(Level.SEVERE, null, ex);
+    }
+  }
 }
-

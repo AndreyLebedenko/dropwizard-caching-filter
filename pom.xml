@@ -14,7 +14,6 @@
     <version>1.0.0</version>
     <packaging>jar</packaging>
 
-    <!--    <name>caching-filter</name>-->
     <description>Caching filter for dropwizard</description>
 
     <properties>
