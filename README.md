@@ -1,4 +1,4 @@
-# Caching filter for dropwizard.
+# Caching filter for Dropwizard/Jersey.
 
 Licence: Apache 2.0
 
