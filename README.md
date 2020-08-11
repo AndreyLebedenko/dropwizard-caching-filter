@@ -1,10 +1,10 @@
-# Caching filter for Dropwizard/Jersey.
+# Server-side caching filter for Dropwizard/Jersey.
 
 Licence: Apache 2.0
 
 How to use:
 
-In main application: Register cache
+In main application: Register the cache
 ---
   	@Override
   	public void run(final MainConfiguration configuration, final Environment environment) {
