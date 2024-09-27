@@ -7,22 +7,20 @@
  */
 package online.adinor.cachingserver.cache.resource;
 
+import java.util.function.BiFunction;
 import org.joda.time.Instant;
 
 import java.util.function.Supplier;
 
 /**
- *
  * @author Andrey Lebedenko (andrey.lebedenko@gmail.com)
  */
-public class DAO implements Supplier<Object> {
+public class DAO implements BiFunction<Integer, String, Object> {
 
   @Override
-  public Object get() {
+  public Object apply(Integer i, String s) {
     return new Object() {
-      public String processed = Instant.now().toDateTime().toString();
+      public String processed = "i=" + i + ",s=" + s + "," + Instant.now().toDateTime();
     };
   }
-
 }
-

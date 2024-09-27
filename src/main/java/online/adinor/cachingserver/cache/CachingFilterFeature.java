@@ -25,11 +25,15 @@ public class CachingFilterFeature implements Feature {
 
   private static final Logger logger = LoggerFactory.getLogger(CachingFilterFeature.class);
   private final List<String> headersToIncludeInKey;
+  private final List<String> queryParametersToIncludeInKey;
   private final Cache<String, StatefulCacheEntry<HttpResponse>> cache;
 
   public CachingFilterFeature(
-      List<String> headersToIncludeInKey, Cache<String, StatefulCacheEntry<HttpResponse>> cache) {
+      List<String> headersToIncludeInKey,
+      List<String> queryParametersToIncludeInKey,
+      Cache<String, StatefulCacheEntry<HttpResponse>> cache) {
     this.headersToIncludeInKey = headersToIncludeInKey;
+    this.queryParametersToIncludeInKey = queryParametersToIncludeInKey;
     this.cache = cache;
   }
 
@@ -47,6 +51,9 @@ public class CachingFilterFeature implements Feature {
     String res = "";
     for (final String h : headersToIncludeInKey) {
       res = res + h + ":" + context.getHeaderString(h);
+    }
+    for (final String q : queryParametersToIncludeInKey) {
+      res = res + q + ":" + context.getUriInfo().getQueryParameters().getFirst(q);
     }
     final String key = context.getMethod() + ":" + context.getUriInfo().getPath() + ":" + res;
     logger.debug("Key produced: {}", key);
