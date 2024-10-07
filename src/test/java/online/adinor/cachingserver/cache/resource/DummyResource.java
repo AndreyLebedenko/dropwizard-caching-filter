@@ -18,6 +18,8 @@ import javax.ws.rs.core.MediaType;
 import java.util.function.Supplier;
 
 import online.adinor.cachingserver.cache.ResponseCachedByFilter;
+import online.adinor.cachingserver.cache.TtlMode;
+import online.adinor.cachingserver.cache.TtlProvider;
 
 /**
  * @author Andrey Lebedenko (andrey.lebedenko@gmail.com)
@@ -29,6 +31,7 @@ public class DummyResource {
 
   public DummyResource(final BiFunction<Integer, String, Object> dao) {
     this.dao = dao;
+    TtlProvider.getInstance().set(10_000);
   }
 
   @GET
@@ -41,8 +44,24 @@ public class DummyResource {
   @GET
   @Produces(MediaType.APPLICATION_JSON)
   @Path("/cached/{id}")
-  @ResponseCachedByFilter(10000)
+  @ResponseCachedByFilter(TtlMode.DYNAMIC)
   public Object getCached(@PathParam("id") int id, @QueryParam("query") String query) {
+    return dao.apply(id, query);
+  }
+
+  @GET
+  @Produces(MediaType.APPLICATION_JSON)
+  @Path("/cached_default/{id}")
+  @ResponseCachedByFilter(TtlMode.FIXED)
+  public Object getCachedFixed(@PathParam("id") int id, @QueryParam("query") String query) {
+    return dao.apply(id, query);
+  }
+
+  @GET
+  @Produces(MediaType.APPLICATION_JSON)
+  @Path("/cached_fixed_local/{id}")
+  @ResponseCachedByFilter(value = TtlMode.FIXED, ttl = 5_000)
+  public Object getCachedFixedDefined(@PathParam("id") int id, @QueryParam("query") String query) {
     return dao.apply(id, query);
   }
 }

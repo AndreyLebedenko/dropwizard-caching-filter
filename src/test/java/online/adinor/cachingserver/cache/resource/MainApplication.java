@@ -32,7 +32,7 @@ public class MainApplication extends Application<MainConfiguration> {
                 // in addition to the method (e.g. GET) and path, we will use:
                 Arrays.asList("Accept"), // optional list of HTTP request headers to use for key
                 Arrays.asList("query"), // optional list of query parameters to use for key
-                CacheBuilder.newBuilder().softValues().build()));
+                CacheBuilder.newBuilder().maximumSize(10).build()));
 
     environment.jersey().register(new DummyResource(new DAO()));
   }

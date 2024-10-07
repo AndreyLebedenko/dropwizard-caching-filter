@@ -23,6 +23,10 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 public @interface ResponseCachedByFilter {
-  int value() default 1000; // 1 second cache default TTL
+
+  TtlMode value() default TtlMode.FIXED;
+
+  // optional TTL in milliseconds for fixed option
+  int ttl() default TtlProvider.DEFAULT_TTL;
 }
 
