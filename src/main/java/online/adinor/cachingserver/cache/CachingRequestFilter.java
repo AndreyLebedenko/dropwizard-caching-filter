@@ -25,7 +25,9 @@ import java.util.logging.Logger;
 
 import com.google.common.cache.Cache;
 
-/** @author Andrey Lebedenko (andrey.lebedenko@gmail.com) */
+/**
+ * @author Andrey Lebedenko (andrey.lebedenko@gmail.com)
+ */
 public class CachingRequestFilter implements ContainerRequestFilter {
   private final Function<ContainerRequestContext, String> keyFactory;
   private final Cache<String, StatefulCacheEntry<HttpResponse>> cache;
@@ -52,19 +54,21 @@ public class CachingRequestFilter implements ContainerRequestFilter {
     try {
       final String key = keyFactory.apply(requestContextContainer);
       requestContextContainer.setProperty(Options.KEY, key);
-      // In worst case scenario if cache implementation does not guarantee the per-key atomicity of the `get` function.
-      // such a cache hit will result in double processing with race condition on update, which is unfortunate, but
+      // In worst case scenario if cache implementation does not guarantee the per-key atomicity of
+      // the `get` function.
+      // such a cache hit will result in double processing with race condition on update, which is
+      // unfortunate, but
       // not catastrophic.
       final StatefulCacheEntry<HttpResponse> element = cache.get(key, StatefulCacheEntry::new);
       synchronized (element) {
         if (element.isNew()) {
-          requestContextContainer.setProperty(Options.TTL, cachedResponse.value());
+          final int ttl = cachedResponse.value().getTtl();
+          requestContextContainer.setProperty(Options.TTL, ttl);
           requestContextContainer.setProperty(Role.OPTION_NAME, Role.Producer);
           requestContextContainer.setProperty(Options.CACHE_ENTRY, element);
-          return;
         } else if (element.isPending()) {
           requestContextContainer.setProperty(Role.OPTION_NAME, Role.Consumer);
-          element.wait(cachedResponse.value());
+          element.wait(cachedResponse.value().getTtl() + 1);
           if (element.isReady()) // ready after concurrent request
           {
             requestContextContainer.abortWith(element.getData().asResponse());

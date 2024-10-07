@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.ws.rs.core.Response;
+import online.adinor.cachingserver.cache.TtlProvider;
 import org.glassfish.jersey.client.JerseyClient;
 import org.glassfish.jersey.client.JerseyClientBuilder;
 import org.junit.Before;
@@ -91,7 +92,7 @@ public class DummyResourceIntegrationTest {
     synchronized (threadsNo) {
       threadsNo.notifyAll();
     }
-    Thread.currentThread().sleep(10_000L);
+    Thread.currentThread().sleep(TtlProvider.getInstance().get() + 1000);
 
     String firstEntity = response1.readEntity(String.class);
     assertThat(response1.getStatus()).isEqualTo(200);
@@ -136,13 +137,14 @@ public class DummyResourceIntegrationTest {
     final Response response1a =
         client
             .target(
-                String.format("http://localhost:%d/cached/1?query=abc", DROPWIZARD.getLocalPort()))
+                String.format(
+                    "http://localhost:%d/cached/1?query=123abc", DROPWIZARD.getLocalPort()))
             .request()
             .get();
     final Response response1b =
         client
             .target(
-                String.format("http://localhost:%d/cached/1?query=abc", DROPWIZARD.getLocalPort()))
+                String.format("http://localhost:%d/cached/1?query=123abc", DROPWIZARD.getLocalPort()))
             .request()
             .get();
 
@@ -159,9 +161,71 @@ public class DummyResourceIntegrationTest {
     String actual1b = response1b.readEntity(String.class);
     String actual2 = response2.readEntity(String.class);
     assertThat(actual1a).contains("i=1");
-    assertThat(actual1a).contains("s=abc");
+    assertThat(actual1a).contains("s=123abc");
     assertThat(actual2).contains("i=2");
     assertThat(actual2).contains("s=xyz");
     assertThat(actual1a).isEqualTo(actual1b);
+  }
+
+  @Test
+  public void cachedFixedResponsesAreIdenticalWithinMaxAge() throws Exception {
+    JerseyClient client = new JerseyClientBuilder().build();
+    String path =
+        String.format("http://localhost:%d/cached_default/1?query=test", DROPWIZARD.getLocalPort());
+
+    Response response1 = client.target(path).request().get();
+    Thread.sleep(500); // Sleep for less than max-age
+    Response response2 = client.target(path).request().get();
+
+    assertThat(response1.getStatus()).isEqualTo(200);
+    assertThat(response2.getStatus()).isEqualTo(200);
+    assertThat(response1.readEntity(String.class)).isEqualTo(response2.readEntity(String.class));
+  }
+
+  @Test
+  public void cachedFixedResponsesAreNotIdenticalAfterMaxAge() throws Exception {
+    JerseyClient client = new JerseyClientBuilder().build();
+    String path =
+        String.format("http://localhost:%d/cached_default/1?query=test", DROPWIZARD.getLocalPort());
+
+    Response response1 = client.target(path).request().get();
+    Thread.sleep(1001); // Sleep for more than max-age
+    Response response2 = client.target(path).request().get();
+
+    assertThat(response1.getStatus()).isEqualTo(200);
+    assertThat(response2.getStatus()).isEqualTo(200);
+    assertThat(response1.readEntity(String.class)).isNotEqualTo(response2.readEntity(String.class));
+  }
+
+  @Test
+  public void cachedFixedDefinedResponsesAreIdenticalWithinMaxAge() throws Exception {
+    JerseyClient client = new JerseyClientBuilder().build();
+    String path =
+        String.format(
+            "http://localhost:%d/cached_fixed_local/1?query=test", DROPWIZARD.getLocalPort());
+
+    Response response1 = client.target(path).request().get();
+    Thread.sleep(500); // Sleep for less than max-age
+    Response response2 = client.target(path).request().get();
+
+    assertThat(response1.getStatus()).isEqualTo(200);
+    assertThat(response2.getStatus()).isEqualTo(200);
+    assertThat(response1.readEntity(String.class)).isEqualTo(response2.readEntity(String.class));
+  }
+
+  @Test
+  public void cachedFixedDefinedResponsesAreNotIdenticalAfterMaxAge() throws Exception {
+    JerseyClient client = new JerseyClientBuilder().build();
+    String path =
+        String.format(
+            "http://localhost:%d/cached_fixed_local/1?query=test", DROPWIZARD.getLocalPort());
+
+    Response response1 = client.target(path).request().get();
+    Thread.sleep(5001); // Sleep for more than max-age
+    Response response2 = client.target(path).request().get();
+
+    assertThat(response1.getStatus()).isEqualTo(200);
+    assertThat(response2.getStatus()).isEqualTo(200);
+    assertThat(response1.readEntity(String.class)).isNotEqualTo(response2.readEntity(String.class));
   }
 }

@@ -14,7 +14,6 @@ import org.junit.Test;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- *
  * @author Andrey Lebedenko (andrey.lebedenko@gmail.com)
  */
 public class StatefulCacheEntryTest {
@@ -29,7 +28,8 @@ public class StatefulCacheEntryTest {
 
   @Test
   public void testSetData() {
-    final StatefulCacheEntry<String> statefulCacheEntry = new StatefulCacheEntry().setData(EXPECTED_DATA);
+    final StatefulCacheEntry<String> statefulCacheEntry =
+        new StatefulCacheEntry().setData(EXPECTED_DATA);
     assertThat(statefulCacheEntry.getData()).isEqualTo(EXPECTED_DATA);
   }
 
@@ -82,6 +82,5 @@ public class StatefulCacheEntryTest {
       }
     }
   }
-
 }
 
