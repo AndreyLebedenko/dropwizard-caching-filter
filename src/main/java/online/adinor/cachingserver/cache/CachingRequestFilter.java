@@ -32,7 +32,7 @@ public class CachingRequestFilter implements ContainerRequestFilter {
   private final Function<ContainerRequestContext, String> keyFactory;
   private final Cache<String, StatefulCacheEntry<HttpResponse>> cache;
 
-  @Context private ResourceInfo resourceInfo;
+  @Context private volatile ResourceInfo resourceInfo;
 
   public CachingRequestFilter(
       final Function<ContainerRequestContext, String> keyFactory,
@@ -43,9 +43,10 @@ public class CachingRequestFilter implements ContainerRequestFilter {
 
   @Override
   public void filter(final ContainerRequestContext requestContext) {
-    final Method resourceMethod = resourceInfo.getResourceMethod();
     final Optional<ResponseCachedByFilter> annotation =
-        Optional.ofNullable(resourceMethod.getDeclaredAnnotation(ResponseCachedByFilter.class));
+        Optional.ofNullable(resourceInfo)
+            .map(ResourceInfo::getResourceMethod)
+            .map(rm -> rm.getDeclaredAnnotation(ResponseCachedByFilter.class));
     annotation.ifPresent(a -> processRequestViaCache(requestContext, a));
   }
 

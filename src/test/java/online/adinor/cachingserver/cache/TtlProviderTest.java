@@ -13,17 +13,18 @@ public class TtlProviderTest {
   @Before
   public void setUp() {
     ttlProvider = TtlProvider.getInstance();
+    ttlProvider.set(-1);
+  }
+
+  @Test
+  public void getThrowsExceptionWhenTtlNotSet() {
+    assertThatThrownBy(() -> ttlProvider.get()).isInstanceOf(IllegalStateException.class);
   }
 
   @Test
   public void getInstanceReturnsSameInstance() {
     TtlProvider anotherInstance = TtlProvider.getInstance();
     assertThat(ttlProvider).isSameAs(anotherInstance);
-  }
-
-  @Test
-  public void getThrowsExceptionWhenTtlNotSet() {
-    assertThatThrownBy(() -> ttlProvider.get()).isInstanceOf(IllegalStateException.class);
   }
 
   @Test
