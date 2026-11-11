@@ -66,6 +66,14 @@ A failed entry holds no data, but it stays in the cache for a while: it is the p
 requests that were waiting for the failed producer meet, and the next request for that key takes
 it over. Once the lease of that producer is over, the failed entry is removed from the cache.
 
+**The lease must be longer than the slowest response of the resource, not the average one.**
+The lease is a timeout for a producer that is presumed dead, not an estimate of how long the
+resource takes. A producer that outlives its lease loses the entry, and its result is thrown away.
+With a lease shorter than the resource, this happens to every producer: nothing is ever cached,
+and every request waits for the lease and then calls the resource anyway, which is worse than
+having no cache at all. Take the worst response time you are prepared to tolerate and add a
+generous margin.
+
 # Principal diagram
 
 ![Principal diagram](https://github.com/AndreyLebedenko/dropwizard-caching-filter/raw/master/Dropwizard-Caching-Filter.jpg)

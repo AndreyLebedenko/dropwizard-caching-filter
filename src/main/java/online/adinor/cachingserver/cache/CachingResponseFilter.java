@@ -114,8 +114,8 @@ public class CachingResponseFilter implements ContainerResponseFilter {
         new TimerTask() {
           @Override
           public void run() {
-            if (entry.getGeneration() == generation && cache.getIfPresent(key) == entry) {
-              cache.invalidate(key);
+            if (entry.getGeneration() == generation) {
+              cache.asMap().remove(key, entry);
             }
           }
         },
@@ -123,20 +123,19 @@ public class CachingResponseFilter implements ContainerResponseFilter {
   }
 
   private void scheduleDeletion(StatefulCacheEntry<HttpResponse> entry, int generation, String key) {
-    // Nobody may need this entry any more once the coordination window of that
+    // Nobody may need this entry anymore once the coordination window of that
     // producer is over: free the cache slot. The check and the removal are done
     // under the monitor of the entry, so that a request taking the entry over
-    // never ends up with an entry that is not in the cache any more.
+    // never ends up with an entry that is not in the cache anymore.
     timer.schedule(
         new TimerTask() {
           @Override
           public void run() {
             synchronized (entry) {
               if (entry.isFailed()
-                  && entry.getGeneration() == generation
-                  && cache.getIfPresent(key) == entry) {
+                  && entry.getGeneration() == generation) {
                 logger.debug("Failed entry is removed from the cache: {}", key);
-                cache.invalidate(key);
+                cache.asMap().remove(key, entry);
               }
             }
           }

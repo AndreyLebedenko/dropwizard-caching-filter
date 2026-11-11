@@ -117,6 +117,7 @@ public class CachingRequestFilter implements ContainerRequestFilter {
       }
     } catch (ExecutionException | InterruptedException ex) {
       logger.warn(ex.getLocalizedMessage(), ex);
+      Thread.currentThread().interrupt();
     }
   }
 

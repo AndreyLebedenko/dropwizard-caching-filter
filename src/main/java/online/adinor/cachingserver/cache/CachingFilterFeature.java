@@ -39,6 +39,8 @@ public class CachingFilterFeature implements Feature {
   /**
    * The default lease of a producer: how long a request may wait for another request to produce
    * the value it needs.
+   * Must exceed the worst-case response time of the resource; a shorter lease effectively disables
+   * caching under heavy load.
    */
   public static final Duration DEFAULT_PRODUCER_LEASE = Duration.ofSeconds(10);
 
@@ -72,7 +74,7 @@ public class CachingFilterFeature implements Feature {
 
   @Override
   public boolean configure(final FeatureContext context) {
-    final Function<ContainerRequestContext, String> keyGen = x -> computeKey(x);
+    final Function<ContainerRequestContext, String> keyGen = this::computeKey;
     context
         .register(
             new CachingRequestFilter(keyGen, cache, Clock.systemUTC(), producerLease))
