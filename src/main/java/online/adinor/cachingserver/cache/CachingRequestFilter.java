@@ -7,23 +7,19 @@
  */
 package online.adinor.cachingserver.cache;
 
-import online.adinor.cachingserver.cache.storage.HttpResponse;
-import online.adinor.cachingserver.cache.storage.StatefulCacheEntry;
-import online.adinor.cachingserver.cache.config.Options;
-import javax.ws.rs.container.ContainerRequestContext;
-import javax.ws.rs.container.ContainerRequestFilter;
-import javax.ws.rs.container.ResourceInfo;
-import javax.ws.rs.core.Context;
-
-import java.io.IOException;
-import java.lang.reflect.Method;
+import com.google.common.cache.Cache;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-
-import com.google.common.cache.Cache;
+import javax.ws.rs.container.ContainerRequestContext;
+import javax.ws.rs.container.ContainerRequestFilter;
+import javax.ws.rs.container.ResourceInfo;
+import javax.ws.rs.core.Context;
+import online.adinor.cachingserver.cache.config.Options;
+import online.adinor.cachingserver.cache.storage.HttpResponse;
+import online.adinor.cachingserver.cache.storage.StatefulCacheEntry;
 
 /**
  * @author Andrey Lebedenko (andrey.lebedenko@gmail.com)
@@ -51,7 +47,7 @@ public class CachingRequestFilter implements ContainerRequestFilter {
   }
 
   private void processRequestViaCache(
-      ContainerRequestContext requestContextContainer, ResponseCachedByFilter cachedResponse) {
+      ContainerRequestContext requestContextContainer, ResponseCachedByFilter annotation) {
     try {
       final String key = keyFactory.apply(requestContextContainer);
       requestContextContainer.setProperty(Options.KEY, key);
@@ -61,15 +57,16 @@ public class CachingRequestFilter implements ContainerRequestFilter {
       // unfortunate, but
       // not catastrophic.
       final StatefulCacheEntry<HttpResponse> element = cache.get(key, StatefulCacheEntry::new);
+      final int ttl = TtlResolver.resolve(annotation);
       synchronized (element) {
         if (element.isNew()) {
-          final int ttl = cachedResponse.value().getTtl();
+          element.setPending();
           requestContextContainer.setProperty(Options.TTL, ttl);
           requestContextContainer.setProperty(Role.OPTION_NAME, Role.Producer);
           requestContextContainer.setProperty(Options.CACHE_ENTRY, element);
         } else if (element.isPending()) {
           requestContextContainer.setProperty(Role.OPTION_NAME, Role.Consumer);
-          element.wait(cachedResponse.value().getTtl() + 1);
+          element.wait(ttl + 1);
           if (element.isReady()) // ready after concurrent request
           {
             requestContextContainer.abortWith(element.getData().asResponse());

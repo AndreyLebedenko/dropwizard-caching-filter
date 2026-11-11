@@ -67,6 +67,7 @@ public class CachingResponseFilter implements ContainerResponseFilter {
                     // enforce per-entry TTL
                     // workaround for ignored feature request
                     // https://github.com/google/guava/issues/1203
+                    final int ttl = TtlResolver.resolve(a);
                     timer.schedule(
                         new TimerTask() {
                           @Override
@@ -74,7 +75,7 @@ public class CachingResponseFilter implements ContainerResponseFilter {
                             cache.invalidate(key);
                           }
                         },
-                        a.value().getTtl() + 1);
+                        ttl + 1);
                   }
                 });
           });
