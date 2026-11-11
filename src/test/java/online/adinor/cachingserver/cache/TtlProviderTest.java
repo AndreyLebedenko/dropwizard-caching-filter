@@ -40,4 +40,9 @@ public class TtlProviderTest {
     ttlProvider.set(15);
     assertThat(ttlProvider.get()).isEqualTo(15);
   }
+
+  @Test
+  public void getDefaultTtlProviderProvidesTheDefaultTtl() {
+    assertThat(TtlProvider.getDefaultTtlProvider().get()).isEqualTo(TtlProvider.DEFAULT_TTL);
+  }
 }

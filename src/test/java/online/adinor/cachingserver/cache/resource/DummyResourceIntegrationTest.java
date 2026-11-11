@@ -189,7 +189,7 @@ public class DummyResourceIntegrationTest {
         String.format("http://localhost:%d/cached_default/1?query=test", DROPWIZARD.getLocalPort());
 
     Response response1 = client.target(path).request().get();
-    Thread.sleep(1001); // Sleep for more than max-age
+    Thread.sleep(2000); // Sleep for more than max-age
     Response response2 = client.target(path).request().get();
 
     assertThat(response1.getStatus()).isEqualTo(200);
@@ -205,7 +205,7 @@ public class DummyResourceIntegrationTest {
             "http://localhost:%d/cached_fixed_local/1?query=test", DROPWIZARD.getLocalPort());
 
     Response response1 = client.target(path).request().get();
-    Thread.sleep(500); // Sleep for less than max-age
+    Thread.sleep(1500); // Sleep for less than max-age
     Response response2 = client.target(path).request().get();
 
     assertThat(response1.getStatus()).isEqualTo(200);
@@ -221,7 +221,7 @@ public class DummyResourceIntegrationTest {
             "http://localhost:%d/cached_fixed_local/1?query=test", DROPWIZARD.getLocalPort());
 
     Response response1 = client.target(path).request().get();
-    Thread.sleep(5001); // Sleep for more than max-age
+    Thread.sleep(6000); // Sleep for more than max-age
     Response response2 = client.target(path).request().get();
 
     assertThat(response1.getStatus()).isEqualTo(200);

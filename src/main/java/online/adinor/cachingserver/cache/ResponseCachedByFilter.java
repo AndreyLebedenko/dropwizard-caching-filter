@@ -15,6 +15,13 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
+ * Instructs the caching filter to cache the response of the annotated method.
+ *
+ * <p><b>Only successful responses are cached.</b> A response with a status of 400 or above is
+ * never stored in the cache: the requests waiting for it are released and one of them produces the
+ * value again. This is a deliberate decision, as an error is usually a temporary condition and
+ * caching it would spread that condition over the whole TTL. The price is that every request
+ * during such an outage reaches the resource.
  *
  * @author Andrey Lebedenko (andrey.lebedenko@gmail.com)
  */

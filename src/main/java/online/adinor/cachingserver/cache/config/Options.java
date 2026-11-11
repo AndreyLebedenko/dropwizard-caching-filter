@@ -15,5 +15,6 @@ public class Options {
   public static final String TTL = "caching_filter_ttl";
   public static final String KEY = "caching_filter_key";
   public static final String CACHE_ENTRY = "caching_filter_entry";
+  public static final String GENERATION = "caching_filter_generation";
 }
 
