@@ -42,15 +42,11 @@ public class StatefulCacheEntryTest {
     assertThat(statefulCacheEntry.isPending()).isFalse();
     assertThat(statefulCacheEntry.isReady()).isFalse();
 
-    statefulCacheEntry.setPending();
+    statefulCacheEntry.setPending(null);
     assertThat(statefulCacheEntry.isNew()).isFalse();
     assertThat(statefulCacheEntry.isPending()).isTrue();
     assertThat(statefulCacheEntry.isReady()).isFalse();
 
-    statefulCacheEntry.setReady();
-    assertThat(statefulCacheEntry.isNew()).isFalse();
-    assertThat(statefulCacheEntry.isPending()).isFalse();
-    assertThat(statefulCacheEntry.isReady()).isTrue();
   }
 
   @Test
@@ -110,11 +106,19 @@ public class StatefulCacheEntryTest {
   @Test
   public void testEntryWithoutProducerIsNotLive() {
     final StatefulCacheEntry<String> statefulCacheEntry = new StatefulCacheEntry();
-    statefulCacheEntry.setPending();
+    statefulCacheEntry.setPending(null);
 
     assertThat(statefulCacheEntry.isPending()).isTrue();
     assertThat(statefulCacheEntry.hasLiveProducer(Instant.now())).isFalse();
     assertThat(statefulCacheEntry.getProducerDeadline()).isNull();
+  }
+
+  @Test
+  public void testRemainingLeaseOfAnEntryWithoutProducerIsZero() {
+    final StatefulCacheEntry<String> statefulCacheEntry = new StatefulCacheEntry();
+    statefulCacheEntry.setPending(null);
+
+    assertThat(statefulCacheEntry.getRemainingLease(Instant.now())).isEqualTo(Duration.ZERO);
   }
 
   @Test

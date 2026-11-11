@@ -8,15 +8,22 @@
 package online.adinor.cachingserver.cache;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import javax.ws.rs.container.ContainerRequestContext;
 import javax.ws.rs.container.ResourceInfo;
@@ -39,7 +46,7 @@ public class CachingRequestFilterTest {
   private static final Duration LEASE = Duration.ofSeconds(1);
 
   private final Instant fixedNow = Instant.parse("2026-01-01T12:00:00Z");
-  private final NowProvider nowProvider = new NowProvider();
+  private final Clock clock = mock(Clock.class);
   private final Cache<String, StatefulCacheEntry<HttpResponse>> cache =
       CacheBuilder.newBuilder().build();
   private final ContainerRequestContext requestContext = mock(ContainerRequestContext.class);
@@ -48,8 +55,8 @@ public class CachingRequestFilterTest {
 
   @Before
   public void setUp() throws Exception {
-    nowProvider.set(() -> fixedNow);
-    filter = new CachingRequestFilter(context -> KEY, cache, nowProvider, LEASE);
+    when(clock.instant()).thenReturn(fixedNow);
+    filter = new CachingRequestFilter(context -> KEY, cache, clock, LEASE);
     injectResourceInfo(filter, cachedResourceInfo());
   }
 
@@ -71,7 +78,7 @@ public class CachingRequestFilterTest {
     assertThat(entry.getGeneration()).isEqualTo(1);
 
     // The producer is gone: its lease is over.
-    nowProvider.set(() -> fixedNow.plusSeconds(60));
+    when(clock.instant()).thenReturn(fixedNow.plusSeconds(60));
     final long started = System.nanoTime();
     filter.filter(requestContext);
     final long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
@@ -82,17 +89,74 @@ public class CachingRequestFilterTest {
   }
 
   @Test
-  public void requestWaitsForTheLeaseOfALiveProducer() {
+  public void requestGivesUpWaitingWithoutTakingOverALiveProducer() {
     filter.filter(requestContext);
     final StatefulCacheEntry<HttpResponse> entry = cache.getIfPresent(KEY);
 
-    // The producer is still within its lease: the request waits for it before taking over.
+    // The producer is still within its lease: the request waits for its whole budget and
+    // then goes to the resource itself instead of taking the entry over.
     final long started = System.nanoTime();
     filter.filter(requestContext);
     final long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
 
-    assertThat(elapsedMs).as("the request waited for the lease").isGreaterThanOrEqualTo(LEASE.toMillis());
+    assertThat(elapsedMs).as("the request waited for its whole budget").isGreaterThanOrEqualTo(LEASE.toMillis());
+    assertThat(entry.getGeneration())
+        .as("a live producer is not taken over")
+        .isEqualTo(1);
+    verify(requestContext, never()).abortWith(any());
+  }
+
+  @Test
+  public void anExpiredLeaseIsTakenOverWhenTheWaitBudgetIsOver() throws Exception {
+    filter.filter(requestContext);
+    final StatefulCacheEntry<HttpResponse> entry = cache.getIfPresent(KEY);
+    assertThat(entry.getGeneration()).isEqualTo(1);
+
+    // A second request with a shorter budget: it waits its 100 ms out, and by then
+    // the lease of the producer is over as well - the entry is taken over.
+    final Clock impatientClock = mock(Clock.class);
+    when(impatientClock.instant())
+        .thenReturn(fixedNow, fixedNow, fixedNow.plusSeconds(60));
+    final CachingRequestFilter impatient =
+        new CachingRequestFilter(context -> KEY, cache, impatientClock, Duration.ofMillis(100));
+    injectResourceInfo(impatient, cachedResourceInfo());
+    impatient.filter(requestContext);
+
     assertThat(entry.getGeneration()).isEqualTo(2);
+    assertThat(entry.isPending()).isTrue();
+    assertThat(entry.getProducerDeadline())
+        .isEqualTo(fixedNow.plusSeconds(60).plusMillis(100));
+  }
+
+  @Test
+  public void aFailureOfTheCacheIsLoggedAndTheRequestProceeds() throws Exception {
+    @SuppressWarnings("unchecked")
+    final Cache<String, StatefulCacheEntry<HttpResponse>> throwingCache = mock(Cache.class);
+    when(throwingCache.get(anyString(), any(Callable.class)))
+        .thenThrow(new ExecutionException(new RuntimeException("cache is broken")));
+    final CachingRequestFilter filterWithBrokenCache =
+        new CachingRequestFilter(context -> KEY, throwingCache, clock, LEASE);
+    injectResourceInfo(filterWithBrokenCache, cachedResourceInfo());
+
+    filterWithBrokenCache.filter(requestContext);
+
+    assertThat(cache.getIfPresent(KEY)).isNull();
+    verify(requestContext, never()).abortWith(any());
+  }
+
+  @Test
+  public void anInterruptedWaiterIsLoggedAndTheRequestProceeds() throws Exception {
+    filter.filter(requestContext);
+
+    // The second request waits for the producer: the wait is interrupted, which
+    // must be caught and logged, and the request proceeds to the resource.
+    final Thread waiter = new Thread(() -> filter.filter(requestContext));
+    waiter.start();
+    Thread.sleep(100L);
+    waiter.interrupt();
+    waiter.join(2_000);
+
+    assertThat(waiter.isAlive()).isFalse();
   }
 
   private static ResourceInfo cachedResourceInfo() throws Exception {

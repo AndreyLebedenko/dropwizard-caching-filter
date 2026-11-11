@@ -46,7 +46,8 @@ public class CachingResponseFilter implements ContainerResponseFilter {
 
   private static final Logger logger = LoggerFactory.getLogger(CachingResponseFilter.class);
 
-  private final Timer timer = new Timer();
+  // A daemon thread: a pending cache invalidation must not keep the JVM from shutting down.
+  private final Timer timer = new Timer("caching-response-filter-ttl", true);
   private final Cache<String, StatefulCacheEntry<HttpResponse>> cache;
   private final Duration producerLease;
 
@@ -113,7 +114,9 @@ public class CachingResponseFilter implements ContainerResponseFilter {
         new TimerTask() {
           @Override
           public void run() {
-            cache.invalidate(key);
+            if (entry.getGeneration() == generation && cache.getIfPresent(key) == entry) {
+              cache.invalidate(key);
+            }
           }
         },
         ttl + 1);
@@ -132,7 +135,7 @@ public class CachingResponseFilter implements ContainerResponseFilter {
               if (entry.isFailed()
                   && entry.getGeneration() == generation
                   && cache.getIfPresent(key) == entry) {
-                logger.info("Failed entry is removed from the cache: {}", key);
+                logger.debug("Failed entry is removed from the cache: {}", key);
                 cache.invalidate(key);
               }
             }

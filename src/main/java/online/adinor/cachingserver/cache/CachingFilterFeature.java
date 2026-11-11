@@ -8,6 +8,7 @@
 package online.adinor.cachingserver.cache;
 
 import com.google.common.cache.Cache;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.function.Function;
@@ -18,11 +19,6 @@ import online.adinor.cachingserver.cache.storage.HttpResponse;
 import online.adinor.cachingserver.cache.storage.StatefulCacheEntry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.List;
-import java.util.function.Function;
-
-import com.google.common.cache.Cache;
 
 /**
  * Registers the caching filters in the Jersey environment.
@@ -79,7 +75,7 @@ public class CachingFilterFeature implements Feature {
     final Function<ContainerRequestContext, String> keyGen = x -> computeKey(x);
     context
         .register(
-            new CachingRequestFilter(keyGen, cache, NowProvider.getInstance(), producerLease))
+            new CachingRequestFilter(keyGen, cache, Clock.systemUTC(), producerLease))
         .register(new CachingResponseFilter(cache, producerLease));
     return true;
   }

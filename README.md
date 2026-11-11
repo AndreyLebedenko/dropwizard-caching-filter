@@ -46,7 +46,9 @@ produced wait for that producer instead of calling the resource themselves, so t
 produced once and cached.
 
 The lease is the safety net: when it is over, the producer is considered to be gone, and one of
-the waiting requests takes the entry over.
+the waiting requests takes the entry over. A request that has waited for the whole lease while
+the producer is still alive does not take the entry over: it goes to the resource itself and
+leaves the entry to the producer, whose result will serve the requests that follow.
 
 # What is not cached
 

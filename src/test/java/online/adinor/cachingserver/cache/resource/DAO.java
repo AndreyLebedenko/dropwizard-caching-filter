@@ -22,7 +22,7 @@ public class DAO implements BiFunction<Integer, String, Object> {
   @Override
   public Object apply(Integer i, String s) {
     CALLS.incrementAndGet();
-    try { Thread.sleep(200); } catch (InterruptedException e) { }
+    try { Thread.sleep(200); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
     return new Object() {
       public String processed = "i=" + i + ",s=" + s + "," + Instant.now().toDateTime();
     };

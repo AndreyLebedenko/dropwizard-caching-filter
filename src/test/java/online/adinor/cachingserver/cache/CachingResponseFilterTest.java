@@ -128,6 +128,87 @@ public class CachingResponseFilterTest {
     verify(cache, timeout(2_000).times(1)).invalidate(KEY);
   }
 
+  @Test
+  public void anErrorOfATakenOverProducerIsIgnored() {
+    when(responseContext.getStatus()).thenReturn(500);
+    entry.setPending(Instant.now().plusSeconds(10));
+    final int staleGeneration = entry.getGeneration();
+    // Another producer takes the entry over.
+    entry.setPending(Instant.now().plusSeconds(10));
+    when(requestContext.getProperty(Options.GENERATION)).thenReturn(staleGeneration);
+
+    filter.filter(requestContext, responseContext);
+
+    assertThat(entry.isPending()).as("the entry belongs to the new producer").isTrue();
+    assertThat(entry.getGeneration()).isEqualTo(2);
+    assertThat(entry.getData()).as("nothing was stored").isNull();
+    verify(cache, never()).invalidate(anyString());
+  }
+
+  @Test
+  public void aTakenOverEntryIsNotInvalidatedByTheTtlTimerOfTheOldProducer() throws Exception {
+    entry.setPending(Instant.now().plusSeconds(10));
+    when(requestContext.getProperty(Options.GENERATION)).thenReturn(entry.getGeneration());
+    when(requestContext.getProperty(Options.TTL)).thenReturn(200);
+    filter.filter(requestContext, responseContext);
+    assertThat(entry.isReady()).isTrue();
+
+    // Another producer takes the entry over before the TTL timer of this one fires.
+    entry.setPending(Instant.now().plusSeconds(10));
+
+    Thread.sleep(500L);
+    verify(cache, never()).invalidate(anyString());
+  }
+
+  @Test
+  public void anEntryEvictedBeforeItsTtlIsNotInvalidatedByTheTtlTimer() throws Exception {
+    entry.setPending(Instant.now().plusSeconds(10));
+    when(requestContext.getProperty(Options.GENERATION)).thenReturn(entry.getGeneration());
+    when(requestContext.getProperty(Options.TTL)).thenReturn(200);
+    filter.filter(requestContext, responseContext);
+    assertThat(entry.isReady()).isTrue();
+
+    // The entry is evicted before its TTL timer fires: the timer must not remove
+    // whatever is at the key now.
+    when(cache.getIfPresent(KEY)).thenReturn(null);
+
+    Thread.sleep(500L);
+    verify(cache, never()).invalidate(anyString());
+  }
+
+  @Test
+  public void aFailedEntryTakenOverAndProducedIsNotRemovedByTheOldTimer() throws Exception {
+    when(responseContext.getStatus()).thenReturn(500);
+    entry.setPending(Instant.now().plusSeconds(10));
+    when(requestContext.getProperty(Options.GENERATION)).thenReturn(entry.getGeneration());
+    filter.filter(requestContext, responseContext);
+    assertThat(entry.isFailed()).isTrue();
+
+    // Another producer takes the entry over and succeeds before the deletion timer
+    // of the failed producer fires.
+    entry.setPending(Instant.now().plusSeconds(10));
+    assertThat(entry.resolve(entry.getGeneration(), mock(HttpResponse.class))).isTrue();
+
+    Thread.sleep(200L); // the lease of this test class is 100 ms
+    verify(cache, never()).invalidate(anyString());
+  }
+
+  @Test
+  public void aFailedEntryEvictedFromTheCacheIsNotRemovedByTheOldTimer() throws Exception {
+    when(responseContext.getStatus()).thenReturn(500);
+    entry.setPending(Instant.now().plusSeconds(10));
+    when(requestContext.getProperty(Options.GENERATION)).thenReturn(entry.getGeneration());
+    filter.filter(requestContext, responseContext);
+    assertThat(entry.isFailed()).isTrue();
+
+    // The cache no longer holds this entry: the deletion timer must not remove
+    // whatever is at the key now.
+    when(cache.getIfPresent(KEY)).thenReturn(null);
+
+    Thread.sleep(200L); // the lease of this test class is 100 ms
+    verify(cache, never()).invalidate(anyString());
+  }
+
   private static ResourceInfo cachedResourceInfo() throws Exception {
     final Method resourceMethod = CachedResource.class.getMethod("cached");
     final ResourceInfo resourceInfo = mock(ResourceInfo.class);

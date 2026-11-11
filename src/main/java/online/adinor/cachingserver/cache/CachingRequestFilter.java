@@ -8,13 +8,12 @@
 package online.adinor.cachingserver.cache;
 
 import com.google.common.cache.Cache;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import javax.ws.rs.container.ContainerRequestContext;
 import javax.ws.rs.container.ContainerRequestFilter;
 import javax.ws.rs.container.ResourceInfo;
@@ -22,14 +21,18 @@ import javax.ws.rs.core.Context;
 import online.adinor.cachingserver.cache.config.Options;
 import online.adinor.cachingserver.cache.storage.HttpResponse;
 import online.adinor.cachingserver.cache.storage.StatefulCacheEntry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * @author Andrey Lebedenko (andrey.lebedenko@gmail.com)
  */
 public class CachingRequestFilter implements ContainerRequestFilter {
+  private static final Logger logger = LoggerFactory.getLogger(CachingRequestFilter.class);
+
   private final Function<ContainerRequestContext, String> keyFactory;
   private final Cache<String, StatefulCacheEntry<HttpResponse>> cache;
-  private final NowProvider nowProvider;
+  private final Clock clock;
   private final Duration producerLease;
 
   @Context private volatile ResourceInfo resourceInfo;
@@ -37,11 +40,11 @@ public class CachingRequestFilter implements ContainerRequestFilter {
   public CachingRequestFilter(
       final Function<ContainerRequestContext, String> keyFactory,
       final Cache<String, StatefulCacheEntry<HttpResponse>> cache,
-      final NowProvider nowProvider,
+      final Clock clock,
       final Duration producerLease) {
     this.keyFactory = keyFactory;
     this.cache = cache;
-    this.nowProvider = nowProvider;
+    this.clock = clock;
     this.producerLease = producerLease;
   }
 
@@ -70,7 +73,7 @@ public class CachingRequestFilter implements ContainerRequestFilter {
         // measured with a monotonic clock: it is a real wait, it must always come to an end.
         final long waitBudget = System.nanoTime() + producerLease.toNanos();
         while (true) {
-          final Instant now = nowProvider.get();
+          final Instant now = clock.instant();
           if (element.isReady()) {
             // The value is cached: serve it without touching the resource.
             requestContextContainer.setProperty(Role.OPTION_NAME, Role.Consumer);
@@ -92,6 +95,13 @@ public class CachingRequestFilter implements ContainerRequestFilter {
           requestContextContainer.setProperty(Role.OPTION_NAME, Role.Consumer);
           final long left = waitBudget - System.nanoTime();
           if (left <= 0L) {
+            if (element.hasLiveProducer(clock.instant())) {
+              // This request is not willing to wait any longer, but the producer is still
+              // alive: leave the entry to it, its result will serve the requests that
+              // follow. This one goes to the resource itself, without taking the entry
+              // over - a live producer's work must not be thrown away.
+              return;
+            }
             becomeProducer(requestContextContainer, element, ttl);
             return;
           }
@@ -106,7 +116,7 @@ public class CachingRequestFilter implements ContainerRequestFilter {
         }
       }
     } catch (ExecutionException | InterruptedException ex) {
-      Logger.getLogger(CachingRequestFilter.class.getName()).log(Level.SEVERE, null, ex);
+      logger.warn(ex.getLocalizedMessage(), ex);
     }
   }
 
@@ -121,7 +131,7 @@ public class CachingRequestFilter implements ContainerRequestFilter {
       final ContainerRequestContext requestContextContainer,
       final StatefulCacheEntry<HttpResponse> element,
       final int ttl) {
-    element.setPending(nowProvider.get().plus(producerLease));
+    element.setPending(clock.instant().plus(producerLease));
     requestContextContainer.setProperty(Options.TTL, ttl);
     requestContextContainer.setProperty(Role.OPTION_NAME, Role.Producer);
     requestContextContainer.setProperty(Options.CACHE_ENTRY, element);

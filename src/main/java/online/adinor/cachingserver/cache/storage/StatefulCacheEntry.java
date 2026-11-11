@@ -46,7 +46,7 @@ public class StatefulCacheEntry<T> {
   private static final int STATE_FAILED = 3;
 
   private final AtomicInteger state = new AtomicInteger(STATE_NEW);
-  private final AtomicReference<T> ar = new AtomicReference<>();
+  private final AtomicReference<T> data = new AtomicReference<>();
   /** Bumped on every takeover: tells which producer currently owns the entry. */
   private final AtomicInteger generation = new AtomicInteger(0);
   /** The moment until which the current producer is considered alive. Null means "no producer". */
@@ -56,16 +56,16 @@ public class StatefulCacheEntry<T> {
   }
 
   public StatefulCacheEntry(final T data) {
-    ar.set(data);
+    this.data.set(data);
   }
 
   public StatefulCacheEntry<T> setData(final T data) {
-    ar.set(data);
+    this.data.set(data);
     return this;
   }
 
   public T getData() {
-    return ar.get();
+    return data.get();
   }
 
   public boolean isNew() {
@@ -88,16 +88,6 @@ public class StatefulCacheEntry<T> {
   }
 
   /**
-   * Puts the entry into the pending state without a lease: nobody owns it, so the next request
-   * takes it over right away.
-   *
-   * @return this entry
-   */
-  public StatefulCacheEntry<T> setPending() {
-    return setPending(null);
-  }
-
-  /**
    * Puts the entry into the pending state, owned by the producer until the given deadline.
    *
    * @param deadline the moment until which the producer is considered to be alive, null if there is
@@ -108,16 +98,6 @@ public class StatefulCacheEntry<T> {
     state.set(STATE_PENDING);
     generation.incrementAndGet();
     producerDeadline.set(deadline);
-    return this;
-  }
-
-  public StatefulCacheEntry<T> setReady() {
-    state.set(STATE_READY);
-    return this;
-  }
-
-  public StatefulCacheEntry<T> setFailed() {
-    state.set(STATE_FAILED);
     return this;
   }
 
@@ -175,7 +155,7 @@ public class StatefulCacheEntry<T> {
     if (data == null) {
       state.set(STATE_FAILED);
     } else {
-      ar.set(data);
+      this.data.set(data);
       state.set(STATE_READY);
     }
     notifyAll();

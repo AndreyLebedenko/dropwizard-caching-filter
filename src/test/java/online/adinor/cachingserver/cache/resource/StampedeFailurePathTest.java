@@ -143,7 +143,7 @@ public class StampedeFailurePathTest {
     }
     assertThat(keys).hasSize(1);
     final String key = keys.get(0);
-    StampedeApplication.CACHE.put(key, new StatefulCacheEntry<HttpResponse>().setPending());
+    StampedeApplication.CACHE.put(key, new StatefulCacheEntry<HttpResponse>().setPending(null));
 
     final Result blocked = get("/plain/4");
     assertThat(blocked.status).isEqualTo(200);
