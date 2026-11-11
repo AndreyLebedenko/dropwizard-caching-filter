@@ -18,6 +18,7 @@ import static org.mockito.Mockito.when;
 import com.google.common.cache.Cache;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.time.Instant;
 import javax.ws.rs.container.ContainerRequestContext;
 import javax.ws.rs.container.ContainerResponseContext;
@@ -38,6 +39,7 @@ import org.junit.Test;
 public class CachingResponseFilterTest {
 
   private static final String KEY = "the-key";
+  private static final Duration LEASE = Duration.ofMillis(100);
 
   @SuppressWarnings("unchecked")
   private final Cache<String, StatefulCacheEntry<HttpResponse>> cache = mock(Cache.class);
@@ -61,8 +63,9 @@ public class CachingResponseFilterTest {
     when(requestContext.getProperty(Options.CACHE_ENTRY)).thenReturn(entry);
     // The entry is invalidated as soon as the response is stored.
     when(requestContext.getProperty(Options.TTL)).thenReturn(0);
+    when(cache.getIfPresent(KEY)).thenReturn(entry);
 
-    filter = new CachingResponseFilter(cache);
+    filter = new CachingResponseFilter(cache, LEASE);
     injectResourceInfo(filter, cachedResourceInfo());
   }
 
@@ -93,6 +96,36 @@ public class CachingResponseFilterTest {
     // Give the invalidation timer the time to fire, if it has been scheduled.
     Thread.sleep(100L);
     verify(cache, never()).invalidate(anyString());
+  }
+
+  @Test
+  public void theFailedEntryIsRemovedFromTheCacheWhenNobodyTakesItOver() {
+    when(responseContext.getStatus()).thenReturn(500);
+    entry.setPending(Instant.now().plusSeconds(10));
+    when(requestContext.getProperty(Options.GENERATION)).thenReturn(entry.getGeneration());
+
+    filter.filter(requestContext, responseContext);
+
+    assertThat(entry.isFailed()).isTrue();
+    verify(cache, timeout(2_000)).invalidate(KEY);
+  }
+
+  @Test
+  public void theFailedEntryIsKeptWhenAnotherProducerHasTakenItOver() {
+    when(responseContext.getStatus()).thenReturn(500);
+    entry.setPending(Instant.now().plusSeconds(10));
+    when(requestContext.getProperty(Options.GENERATION)).thenReturn(entry.getGeneration());
+    filter.filter(requestContext, responseContext);
+    assertThat(entry.isFailed()).isTrue();
+
+    // Another producer takes the entry over and fails as well.
+    entry.setPending(Instant.now().plusSeconds(10));
+    final int newGeneration = entry.getGeneration();
+    when(requestContext.getProperty(Options.GENERATION)).thenReturn(newGeneration);
+    filter.filter(requestContext, responseContext);
+
+    // Only the cleanup of the last failure removes the entry.
+    verify(cache, timeout(2_000).times(1)).invalidate(KEY);
   }
 
   private static ResourceInfo cachedResourceInfo() throws Exception {

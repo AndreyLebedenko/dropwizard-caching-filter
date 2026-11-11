@@ -60,6 +60,10 @@ such an outage every request reaches the resource. If your deployment prefers th
 over the load, cache the errors in the resource itself and let the filter deal with the successful
 responses only.
 
+A failed entry holds no data, but it stays in the cache for a while: it is the point where the
+requests that were waiting for the failed producer meet, and the next request for that key takes
+it over. Once the lease of that producer is over, the failed entry is removed from the cache.
+
 # Principal diagram
 
 ![Principal diagram](https://github.com/AndreyLebedenko/dropwizard-caching-filter/raw/master/Dropwizard-Caching-Filter.jpg)

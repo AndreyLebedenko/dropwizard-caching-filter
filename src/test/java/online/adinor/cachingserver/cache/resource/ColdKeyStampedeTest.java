@@ -51,7 +51,6 @@ public class ColdKeyStampedeTest {
     go.countDown();
     done.await(30, TimeUnit.SECONDS);
     pool.shutdownNow();
-    System.out.println("ENDPOINT_CALLS=" + DAO.CALLS.get() + " for " + n + " concurrent requests");
     assertThat(DAO.CALLS.get()).isEqualTo(1);
   }
 }

@@ -80,7 +80,7 @@ public class CachingFilterFeature implements Feature {
     context
         .register(
             new CachingRequestFilter(keyGen, cache, NowProvider.getInstance(), producerLease))
-        .register(new CachingResponseFilter(cache));
+        .register(new CachingResponseFilter(cache, producerLease));
     return true;
   }
 
