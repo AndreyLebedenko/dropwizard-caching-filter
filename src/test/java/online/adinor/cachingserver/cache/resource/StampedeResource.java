@@ -23,6 +23,10 @@ public class StampedeResource {
 
   public static final int TTL_MS = 10_000;
   public static final int SLOW_MS = 300;
+  /** Slower than the TTL of the entry it belongs to. */
+  public static final int SLOWER_THAN_TTL_MS = 700;
+
+  public static final int SLOWER_THAN_TTL_ENTRY_TTL_MS = 300;
 
   private static final ConcurrentHashMap<String, AtomicInteger> CALLS = new ConcurrentHashMap<>();
 
@@ -83,5 +87,19 @@ public class StampedeResource {
       return Response.status(500).entity("boom").build();
     }
     return Response.ok("slow-flaky-" + id + "-call-" + n).build();
+  }
+
+  /**
+   * Takes longer than the TTL of its entry. The TTL says how long the value lives, not how long
+   * the producer may work on it: the value must be produced once and cached, not once per waiting
+   * request.
+   */
+  @GET
+  @Path("/slower-than-ttl/{id}")
+  @ResponseCachedByFilter(value = TtlMode.FIXED, ttl = SLOWER_THAN_TTL_ENTRY_TTL_MS)
+  public Response slowerThanTtl(@PathParam("id") final int id) throws InterruptedException {
+    final int n = countCall("slower-than-ttl", id);
+    Thread.sleep(SLOWER_THAN_TTL_MS);
+    return Response.ok("slower-than-ttl-" + id + "-call-" + n).build();
   }
 }

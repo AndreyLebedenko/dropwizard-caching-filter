@@ -4,6 +4,7 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import io.dropwizard.Application;
 import io.dropwizard.setup.Environment;
+import java.time.Duration;
 import java.util.Collections;
 import online.adinor.cachingserver.cache.CachingFilterFeature;
 import online.adinor.cachingserver.cache.storage.HttpResponse;
@@ -24,7 +25,11 @@ public class StampedeApplication extends Application<MainConfiguration> {
         .jersey()
         .register(
             new CachingFilterFeature(
-                Collections.<String>emptyList(), Collections.<String>emptyList(), CACHE));
+                Collections.<String>emptyList(),
+                Collections.<String>emptyList(),
+                CACHE,
+                // The lease of a producer is independent of the TTL of the value.
+                Duration.ofSeconds(5)));
     environment.jersey().register(new StampedeResource());
   }
 }

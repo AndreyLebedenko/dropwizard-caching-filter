@@ -8,6 +8,7 @@
 package online.adinor.cachingserver.cache;
 
 import com.google.common.cache.Cache;
+import java.time.Duration;
 import java.util.List;
 import java.util.function.Function;
 import javax.ws.rs.container.ContainerRequestContext;
@@ -31,29 +32,54 @@ import com.google.common.cache.Cache;
  * {@link ResponseCachedByFilter} are cached, and only if their status is below 400: error
  * responses are never cached, see {@link ResponseCachedByFilter}.
  *
+ * <p>The TTL of an entry and the lease of its producer are two different things: the TTL says how
+ * long a cached value stays valid, the lease says how long a producer is allowed to work on it.
+ * The lease is a property of the filter, the TTL is a property of the annotated method.
+ *
  * @author Andrey Lebedenko (andrey.lebedenko@gmail.com)
  */
 public class CachingFilterFeature implements Feature {
+
+  /**
+   * The default lease of a producer: how long a request may wait for another request to produce
+   * the value it needs.
+   */
+  public static final Duration DEFAULT_PRODUCER_LEASE = Duration.ofSeconds(10);
 
   private static final Logger logger = LoggerFactory.getLogger(CachingFilterFeature.class);
   private final List<String> headersToIncludeInKey;
   private final List<String> queryParametersToIncludeInKey;
   private final Cache<String, StatefulCacheEntry<HttpResponse>> cache;
+  private final Duration producerLease;
 
   public CachingFilterFeature(
       List<String> headersToIncludeInKey,
       List<String> queryParametersToIncludeInKey,
       Cache<String, StatefulCacheEntry<HttpResponse>> cache) {
+    this(
+        headersToIncludeInKey,
+        queryParametersToIncludeInKey,
+        cache,
+        DEFAULT_PRODUCER_LEASE);
+  }
+
+  public CachingFilterFeature(
+      List<String> headersToIncludeInKey,
+      List<String> queryParametersToIncludeInKey,
+      Cache<String, StatefulCacheEntry<HttpResponse>> cache,
+      Duration producerLease) {
     this.headersToIncludeInKey = headersToIncludeInKey;
     this.queryParametersToIncludeInKey = queryParametersToIncludeInKey;
     this.cache = cache;
+    this.producerLease = producerLease;
   }
 
   @Override
   public boolean configure(final FeatureContext context) {
     final Function<ContainerRequestContext, String> keyGen = x -> computeKey(x);
     context
-        .register(new CachingRequestFilter(keyGen, cache))
+        .register(
+            new CachingRequestFilter(keyGen, cache, NowProvider.getInstance(), producerLease))
         .register(new CachingResponseFilter(cache));
     return true;
   }

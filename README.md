@@ -30,6 +30,24 @@ In resource: Instruct caching filter to cache operations per method
 
 Parameter -- TTL of the cache entry in milliseconds.
 
+# TTL and the lease of a producer
+
+Two different things:
+
+- the **TTL** of an entry says how long a cached value stays valid. It is a property of the
+  annotated method.
+- the **lease** of a producer says how long a producer may work on a value, and therefore how long
+  the requests waiting for that value may wait for it. It is a property of the filter and defaults
+  to 10 seconds.
+
+A resource may well be slower than the TTL of its entry: the TTL says how long the value is
+served, not how long it takes to produce it. The requests that arrive while the value is being
+produced wait for that producer instead of calling the resource themselves, so the value is
+produced once and cached.
+
+The lease is the safety net: when it is over, the producer is considered to be gone, and one of
+the waiting requests takes the entry over.
+
 # What is not cached
 
 Only successful responses are cached. A response with a status of 400 or above is never stored in

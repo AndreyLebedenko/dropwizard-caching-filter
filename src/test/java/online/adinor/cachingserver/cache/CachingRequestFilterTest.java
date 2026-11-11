@@ -15,6 +15,7 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.TimeUnit;
 import javax.ws.rs.container.ContainerRequestContext;
@@ -26,7 +27,8 @@ import org.junit.Test;
 
 /**
  * The lease of a producer is a deadline that has to be taken from the clock the filter was given,
- * so that it can be controlled in the tests.
+ * so that it can be controlled in the tests. The lease is not the TTL of the value: the TTL says
+ * how long a cached value stays valid, the lease says how long a producer may work on it.
  *
  * @author Andrey Lebedenko (andrey.lebedenko@gmail.com)
  */
@@ -34,6 +36,7 @@ public class CachingRequestFilterTest {
 
   private static final String KEY = "the-key";
   private static final int TTL = 300;
+  private static final Duration LEASE = Duration.ofSeconds(1);
 
   private final Instant fixedNow = Instant.parse("2026-01-01T12:00:00Z");
   private final NowProvider nowProvider = new NowProvider();
@@ -46,18 +49,19 @@ public class CachingRequestFilterTest {
   @Before
   public void setUp() throws Exception {
     nowProvider.set(() -> fixedNow);
-    filter = new CachingRequestFilter(context -> KEY, cache, nowProvider);
+    filter = new CachingRequestFilter(context -> KEY, cache, nowProvider, LEASE);
     injectResourceInfo(filter, cachedResourceInfo());
   }
 
   @Test
-  public void leaseOfTheProducerIsTakenFromTheGivenClock() {
+  public void leaseOfTheProducerIsTakenFromTheGivenClockAndIsNotTheTtl() {
     filter.filter(requestContext);
 
     final StatefulCacheEntry<HttpResponse> entry = cache.getIfPresent(KEY);
     assertThat(entry).isNotNull();
     assertThat(entry.isPending()).isTrue();
-    assertThat(entry.getProducerDeadline()).isEqualTo(fixedNow.plusMillis(TTL + 1L));
+    assertThat(entry.getProducerDeadline()).isEqualTo(fixedNow.plus(LEASE));
+    assertThat(entry.getProducerDeadline()).isNotEqualTo(fixedNow.plusMillis(TTL));
   }
 
   @Test
@@ -73,8 +77,8 @@ public class CachingRequestFilterTest {
     final long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
 
     assertThat(entry.getGeneration()).isEqualTo(2);
-    assertThat(entry.getProducerDeadline()).isEqualTo(fixedNow.plusSeconds(60).plusMillis(TTL + 1L));
-    assertThat(elapsedMs).as("an expired lease is taken over at once").isLessThan(TTL);
+    assertThat(entry.getProducerDeadline()).isEqualTo(fixedNow.plusSeconds(60).plus(LEASE));
+    assertThat(elapsedMs).as("an expired lease is taken over at once").isLessThan(LEASE.toMillis());
   }
 
   @Test
@@ -87,7 +91,7 @@ public class CachingRequestFilterTest {
     filter.filter(requestContext);
     final long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
 
-    assertThat(elapsedMs).as("the request waited for the lease").isGreaterThanOrEqualTo(TTL);
+    assertThat(elapsedMs).as("the request waited for the lease").isGreaterThanOrEqualTo(LEASE.toMillis());
     assertThat(entry.getGeneration()).isEqualTo(2);
   }
 
