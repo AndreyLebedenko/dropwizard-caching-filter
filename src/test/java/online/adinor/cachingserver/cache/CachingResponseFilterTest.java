@@ -8,11 +8,7 @@
 package online.adinor.cachingserver.cache;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.timeout;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.google.common.cache.Cache;
@@ -20,6 +16,8 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import javax.ws.rs.container.ContainerRequestContext;
 import javax.ws.rs.container.ContainerResponseContext;
 import javax.ws.rs.container.ResourceInfo;
@@ -34,6 +32,10 @@ import org.junit.Test;
  * A producer that has been taken over while it was working must not overwrite the value of the
  * producer that owns the entry now, and must not cut its TTL short either.
  *
+ * <p>The removal from the cache is conditional: a timer removes the entry it was scheduled for,
+ * and never whatever is at the key now. The tests below check that against a real map, not
+ * against the number of calls to the cache.
+ *
  * @author Andrey Lebedenko (andrey.lebedenko@gmail.com)
  */
 public class CachingResponseFilterTest {
@@ -43,6 +45,8 @@ public class CachingResponseFilterTest {
 
   @SuppressWarnings("unchecked")
   private final Cache<String, StatefulCacheEntry<HttpResponse>> cache = mock(Cache.class);
+  private final ConcurrentMap<String, StatefulCacheEntry<HttpResponse>> asMap =
+      new ConcurrentHashMap<>();
 
   private final ContainerRequestContext requestContext = mock(ContainerRequestContext.class);
   private final ContainerResponseContext responseContext = mock(ContainerResponseContext.class);
@@ -61,16 +65,20 @@ public class CachingResponseFilterTest {
     when(requestContext.getProperty(Role.OPTION_NAME)).thenReturn(Role.Producer);
     when(requestContext.getProperty(Options.KEY)).thenReturn(KEY);
     when(requestContext.getProperty(Options.CACHE_ENTRY)).thenReturn(entry);
-    // The entry is invalidated as soon as the response is stored.
+    // The TTL timer fires right after the response is stored.
     when(requestContext.getProperty(Options.TTL)).thenReturn(0);
-    when(cache.getIfPresent(KEY)).thenReturn(entry);
+
+    // The entry sits in the cache like it does in production: the timers of the
+    // filter remove it through this map.
+    when(cache.asMap()).thenReturn(asMap);
+    asMap.put(KEY, entry);
 
     filter = new CachingResponseFilter(cache, LEASE);
     injectResourceInfo(filter, cachedResourceInfo());
   }
 
   @Test
-  public void theResponseOfTheProducerIsStoredInTheEntry() {
+  public void theResponseOfTheProducerIsStoredInTheEntry() throws Exception {
     entry.setPending(Instant.now().plusSeconds(10));
     when(requestContext.getProperty(Options.GENERATION)).thenReturn(entry.getGeneration());
 
@@ -78,11 +86,11 @@ public class CachingResponseFilterTest {
 
     assertThat(entry.isReady()).isTrue();
     assertThat(entry.getData().getEntity()).isEqualTo("the value");
-    verify(cache, timeout(2_000)).invalidate(KEY);
+    assertRemovedWithin(2_000L);
   }
 
   @Test
-  public void theResultOfATakenOverProducerIsIgnored() throws InterruptedException {
+  public void theResultOfATakenOverProducerIsIgnored() throws Exception {
     entry.setPending(Instant.now().plusSeconds(10));
     final int staleGeneration = entry.getGeneration();
     // Another producer takes the entry over.
@@ -93,13 +101,13 @@ public class CachingResponseFilterTest {
 
     assertThat(entry.isPending()).as("the entry belongs to the new producer").isTrue();
     assertThat(entry.getData()).as("the value of the new producer is kept").isNull();
-    // Give the invalidation timer the time to fire, if it has been scheduled.
+    // Give the timers the time to fire, if any has been scheduled.
     Thread.sleep(100L);
-    verify(cache, never()).invalidate(anyString());
+    assertThat(asMap).as("no timer was scheduled for a taken over producer").containsKey(KEY);
   }
 
   @Test
-  public void theFailedEntryIsRemovedFromTheCacheWhenNobodyTakesItOver() {
+  public void theFailedEntryIsRemovedFromTheCacheWhenNobodyTakesItOver() throws Exception {
     when(responseContext.getStatus()).thenReturn(500);
     entry.setPending(Instant.now().plusSeconds(10));
     when(requestContext.getProperty(Options.GENERATION)).thenReturn(entry.getGeneration());
@@ -107,11 +115,11 @@ public class CachingResponseFilterTest {
     filter.filter(requestContext, responseContext);
 
     assertThat(entry.isFailed()).isTrue();
-    verify(cache, timeout(2_000)).invalidate(KEY);
+    assertRemovedWithin(2_000L);
   }
 
   @Test
-  public void theFailedEntryIsKeptWhenAnotherProducerHasTakenItOver() {
+  public void theFailedEntryIsKeptWhenAnotherProducerHasTakenItOver() throws Exception {
     when(responseContext.getStatus()).thenReturn(500);
     entry.setPending(Instant.now().plusSeconds(10));
     when(requestContext.getProperty(Options.GENERATION)).thenReturn(entry.getGeneration());
@@ -124,12 +132,12 @@ public class CachingResponseFilterTest {
     when(requestContext.getProperty(Options.GENERATION)).thenReturn(newGeneration);
     filter.filter(requestContext, responseContext);
 
-    // Only the cleanup of the last failure removes the entry.
-    verify(cache, timeout(2_000).times(1)).invalidate(KEY);
+    // The timer of the stale failure skips the entry, the timer of the last one removes it.
+    assertRemovedWithin(2_000L);
   }
 
   @Test
-  public void anErrorOfATakenOverProducerIsIgnored() {
+  public void anErrorOfATakenOverProducerIsIgnored() throws Exception {
     when(responseContext.getStatus()).thenReturn(500);
     entry.setPending(Instant.now().plusSeconds(10));
     final int staleGeneration = entry.getGeneration();
@@ -142,7 +150,8 @@ public class CachingResponseFilterTest {
     assertThat(entry.isPending()).as("the entry belongs to the new producer").isTrue();
     assertThat(entry.getGeneration()).isEqualTo(2);
     assertThat(entry.getData()).as("nothing was stored").isNull();
-    verify(cache, never()).invalidate(anyString());
+    Thread.sleep(100L);
+    assertThat(asMap).as("no timer was scheduled for a taken over producer").containsKey(KEY);
   }
 
   @Test
@@ -157,23 +166,26 @@ public class CachingResponseFilterTest {
     entry.setPending(Instant.now().plusSeconds(10));
 
     Thread.sleep(500L);
-    verify(cache, never()).invalidate(anyString());
+    assertThat(asMap).as("the TTL timer of the old producer is not theirs to fire").containsKey(KEY);
   }
 
   @Test
-  public void anEntryEvictedBeforeItsTtlIsNotInvalidatedByTheTtlTimer() throws Exception {
+  public void theTtlTimerRemovesOnlyItsOwnEntry() throws Exception {
     entry.setPending(Instant.now().plusSeconds(10));
     when(requestContext.getProperty(Options.GENERATION)).thenReturn(entry.getGeneration());
     when(requestContext.getProperty(Options.TTL)).thenReturn(200);
     filter.filter(requestContext, responseContext);
     assertThat(entry.isReady()).isTrue();
 
-    // The entry is evicted before its TTL timer fires: the timer must not remove
-    // whatever is at the key now.
-    when(cache.getIfPresent(KEY)).thenReturn(null);
+    // The entry is evicted and the key is taken by a fresh entry before the TTL
+    // timer of the old one fires: the timer must not remove the fresh entry.
+    final StatefulCacheEntry<HttpResponse> replacement = new StatefulCacheEntry<>();
+    asMap.put(KEY, replacement);
 
     Thread.sleep(500L);
-    verify(cache, never()).invalidate(anyString());
+    assertThat(asMap.get(KEY))
+        .as("the timer removed only its own entry")
+        .isSameAs(replacement);
   }
 
   @Test
@@ -190,23 +202,34 @@ public class CachingResponseFilterTest {
     assertThat(entry.resolve(entry.getGeneration(), mock(HttpResponse.class))).isTrue();
 
     Thread.sleep(200L); // the lease of this test class is 100 ms
-    verify(cache, never()).invalidate(anyString());
+    assertThat(asMap).as("the entry is not failed anymore").containsKey(KEY);
   }
 
   @Test
-  public void aFailedEntryEvictedFromTheCacheIsNotRemovedByTheOldTimer() throws Exception {
+  public void theDeletionTimerRemovesOnlyItsOwnEntry() throws Exception {
     when(responseContext.getStatus()).thenReturn(500);
     entry.setPending(Instant.now().plusSeconds(10));
     when(requestContext.getProperty(Options.GENERATION)).thenReturn(entry.getGeneration());
     filter.filter(requestContext, responseContext);
     assertThat(entry.isFailed()).isTrue();
 
-    // The cache no longer holds this entry: the deletion timer must not remove
-    // whatever is at the key now.
-    when(cache.getIfPresent(KEY)).thenReturn(null);
+    // The key is taken by a fresh entry before the deletion timer of the failed
+    // one fires: the timer must not remove the fresh entry.
+    final StatefulCacheEntry<HttpResponse> replacement = new StatefulCacheEntry<>();
+    asMap.put(KEY, replacement);
 
     Thread.sleep(200L); // the lease of this test class is 100 ms
-    verify(cache, never()).invalidate(anyString());
+    assertThat(asMap.get(KEY))
+        .as("the timer removed only its own entry")
+        .isSameAs(replacement);
+  }
+
+  private void assertRemovedWithin(final long timeoutMs) throws InterruptedException {
+    final long deadline = System.currentTimeMillis() + timeoutMs;
+    while (asMap.containsKey(KEY) && System.currentTimeMillis() < deadline) {
+      Thread.sleep(10L);
+    }
+    assertThat(asMap).as("the entry is removed from the cache").doesNotContainKey(KEY);
   }
 
   private static ResourceInfo cachedResourceInfo() throws Exception {

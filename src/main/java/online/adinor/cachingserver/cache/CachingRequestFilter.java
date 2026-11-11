@@ -115,7 +115,12 @@ public class CachingRequestFilter implements ContainerRequestFilter {
           // meantime: look at the state of the entry again.
         }
       }
-    } catch (ExecutionException | InterruptedException ex) {
+    } catch (ExecutionException ex) {
+      // The cache failed to give us an entry: log it and let the request reach the
+      // resource as if there was no cache. Nothing was interrupted: setting the
+      // interrupt flag here would spuriously mark this worker thread as interrupted.
+      logger.warn(ex.getLocalizedMessage(), ex);
+    } catch (InterruptedException ex) {
       logger.warn(ex.getLocalizedMessage(), ex);
       Thread.currentThread().interrupt();
     }
