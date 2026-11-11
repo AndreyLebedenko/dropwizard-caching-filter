@@ -23,7 +23,16 @@ import java.util.function.Function;
 
 import com.google.common.cache.Cache;
 
-/** @author Andrey Lebedenko (andrey.lebedenko@gmail.com) */
+/**
+ * Registers the caching filters in the Jersey environment.
+ *
+ * <p>The cache key is built from the method, the path, the listed request headers and the listed
+ * query parameters. Only the responses of the methods annotated with
+ * {@link ResponseCachedByFilter} are cached, and only if their status is below 400: error
+ * responses are never cached, see {@link ResponseCachedByFilter}.
+ *
+ * @author Andrey Lebedenko (andrey.lebedenko@gmail.com)
+ */
 public class CachingFilterFeature implements Feature {
 
   private static final Logger logger = LoggerFactory.getLogger(CachingFilterFeature.class);
