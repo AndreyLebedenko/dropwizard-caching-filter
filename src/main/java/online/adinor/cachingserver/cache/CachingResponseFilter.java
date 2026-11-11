@@ -78,7 +78,13 @@ public class CachingResponseFilter implements ContainerResponseFilter {
                     entry.resolve(generation, null);
                     return;
                   }
-                  entry.resolve(generation, HttpResponse.from(responseContext));
+                  if (!entry.resolve(generation, HttpResponse.from(responseContext))) {
+                    // The entry has been taken over by another producer while this one was
+                    // working: its result is the one that counts, and its TTL must not be cut
+                    // short by ours.
+                    logger.debug("The entry has been taken over: the result is ignored");
+                    return;
+                  }
 
                   // enforce per-entry TTL
                   // workaround for ignored feature request
